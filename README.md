@@ -4,7 +4,7 @@ This is a TF2 sourcemod plugin.
 
 It adds a say command that can play Ten Ton Brick sound bites.  This plugin is mostly the same as eotl_og, just stuff is renamed to be ttb.
 
-By default users have this disabled
+By default users have this enabled
 
 ### Say Commands
 <hr>
@@ -17,7 +17,7 @@ plays a random ttb sound bite
 
 **!ttb list**
 
-Displays a lists of the ttb sound bites
+This brings up a menu to pick which to play
 
 
 **!ttb [shortname]**

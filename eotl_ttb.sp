@@ -9,7 +9,7 @@
 #include <clientprefs>
 
 #define PLUGIN_AUTHOR  "ack"
-#define PLUGIN_VERSION "0.3"
+#define PLUGIN_VERSION "0.5"
 
 #define CONFIG_FILE     "configs/eotl_ttb.cfg"
 
@@ -95,7 +95,7 @@ public Action CommandTTB(int client, int args) {
         // doing this in one lines seems to be less random?
         int rand = GetURandomInt();
         int index = rand % g_alShortNames.Length;
-        g_alShortNames.GetString(index, shortName, sizeof(shortName));        
+        g_alShortNames.GetString(index, shortName, sizeof(shortName));
     } else {
         GetCmdArg(1, shortName, sizeof(shortName));
         StringToLower(shortName);
@@ -121,7 +121,7 @@ public Action CommandTTB(int client, int args) {
     }
 
     if(StrEqual(shortName, "list")) {
-        SendSoundBiteList(client);
+        StartMenu(client);
         return Plugin_Handled;
     }
 
@@ -175,17 +175,67 @@ void PlaySound(const char [] soundFile) {
     }
 }
 
-void SendSoundBiteList(int client) {
+void StartMenu(int client) {
+    Menu menu = CreateMenu(HandleMenuInput);
+
     char shortName[16];
     char description[32];
+    char menuString[64];
 
-    PrintToChat(client, "\x03Ten Ton Brick Sound Bites\x01:");
-    PrintToChat(client, "\x03  !ttb\x01    - random sound bite");
     for(int i = 0; i < g_alShortNames.Length;i++) {
         g_alShortNames.GetString(i, shortName, sizeof(shortName));
         g_smDescriptions.GetString(shortName, description, sizeof(description));
-        PrintToChat(client, "\x03  !ttb %s\x01 - %s", shortName, description);
+        Format(menuString, sizeof(menuString), "[%s] %s", shortName, description);
+
+        menu.AddItem(shortName, menuString);
     }
+
+    menu.SetTitle("Ten Ton Brick Sound Bites");
+    menu.Display(client, 30);
+}
+
+// unclear what is expected to be returned, so using 0 for them all
+int HandleMenuInput(Menu menu, MenuAction action, int client, int itemNum) {
+    char shortName[64];
+    char soundFile[PLATFORM_MAX_PATH];
+
+    if (action == MenuAction_End) {
+        delete menu;
+        return 0;
+    }
+
+    if(action != MenuAction_Select) {
+        return 0;
+    }
+
+    GetMenuItem(menu, itemNum, shortName, sizeof(shortName));
+    if(!g_smSoundBites.GetString(shortName, soundFile, sizeof(soundFile))) {
+        PrintToChat(client, "\x01[\x03ttb\x01] error invalid soundbite %s, use \"!ttb list\" for a list or \"!ttb disable\" to disable sounds", shortName);
+        return 0;
+    }
+
+    // see if the user is allowed to play a ttb
+    if(g_PlayerStates[client].playCount >= g_cvMaxPlayerPlays.IntValue) {
+        PrintToChat(client,"\x01[\x03ttb\x01] sorry you are limited to %d ttb's per map", g_cvMaxPlayerPlays.IntValue);
+        return 0;
+    }
+
+    float timeDiff = GetGameTime() - g_fLastPlay;
+    if(timeDiff < g_cvMinTime.FloatValue) {
+        PrintToChat(client, "\x01[\x03ttb\x01] You must wait %.1f seconds before another ttb will be allowed", g_cvMinTime.FloatValue - timeDiff);
+        return 0;
+    }
+
+    g_PlayerStates[client].playCount++;
+    g_fLastPlay = GetGameTime();
+
+    char description[32];
+    g_smDescriptions.GetString(shortName, description, sizeof(description));
+    PrintToChat(client, "\x01[\x03ttb\x01] Playing %s", description);
+    LogDebug("Playing shortname: %s, file: %s, description: %s", shortName, soundFile, description);
+    PlaySound(soundFile);
+
+    return 0;
 }
 
 void LoadConfig() {
@@ -221,7 +271,7 @@ void LoadConfig() {
             LogMessage("loaded %s = %s with description %s", shortName, soundFile, description);
         } while(KvGotoNextKey(cfg));
     }
-    CloseHandle(cfg);  
+    CloseHandle(cfg);
 }
 
 void LoadClientConfig(int client) {
@@ -236,10 +286,10 @@ void LoadClientConfig(int client) {
 
     char enableState[6];
     GetClientCookie(client, g_hClientCookies, enableState, 6);
-    if(StrEqual(enableState, "true")) {
-        g_PlayerStates[client].enabled = true;
-    } else {
+    if(StrEqual(enableState, "false")) {
         g_PlayerStates[client].enabled = false;
+    } else {
+        g_PlayerStates[client].enabled = true;
     }
 
     LogDebug("client %N has ttb %s", client, g_PlayerStates[client].enabled ? "enabled" : "disabled");
